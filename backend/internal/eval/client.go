@@ -26,13 +26,12 @@ var retryInRe = regexp.MustCompile(`try again in ([0-9hm.]+s)`)
 type meter struct {
 	inner agent.ChatClient
 
-	mu        sync.Mutex
-	calls     int
-	tokens    int
-	busy      time.Duration // time inside successful calls
-	waited    time.Duration // time spent waiting for rate limits
-	dailyHit  bool
-	lastError error
+	mu       sync.Mutex
+	calls    int
+	tokens   int
+	busy     time.Duration // time inside successful calls
+	waited   time.Duration // time spent waiting for rate limits
+	dailyHit bool
 }
 
 func (m *meter) CreateChatCompletion(ctx context.Context, req openai.ChatCompletionRequest) (openai.ChatCompletionResponse, error) {
@@ -55,9 +54,6 @@ func (m *meter) CreateChatCompletion(ctx context.Context, req openai.ChatComplet
 			return resp, ErrDailyLimit
 		}
 		if !limited || attempt >= 8 {
-			m.mu.Lock()
-			m.lastError = err
-			m.mu.Unlock()
 			return resp, err
 		}
 		select {

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 	_ "time/tzdata" // timezones work in minimal containers
@@ -63,17 +64,28 @@ func run() error {
 
 	var wg sync.WaitGroup
 
-	botUsername := ""
+	// The bot connects in the background: if Telegram is unreachable at start-up,
+	// the panel and the API keep working while the bot retries.
+	var botUsername atomic.Pointer[string]
 	if cfg.TelegramToken != "" {
-		tg, err := bot.New(cfg.TelegramToken, ag, svc, log)
-		if err != nil {
-			return err
-		}
-		botUsername = tg.Username()
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			tg.Run(ctx)
+			for {
+				tg, err := bot.New(cfg.TelegramToken, ag, svc, log)
+				if err == nil {
+					name := tg.Username()
+					botUsername.Store(&name)
+					tg.Run(ctx)
+					return
+				}
+				log.Error("telegram bot is not available, retrying in 30s", "err", err)
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(30 * time.Second):
+				}
+			}
 		}()
 	} else {
 		log.Warn("TELEGRAM_BOT_TOKEN is not set: only the REST API is running")
@@ -95,8 +107,13 @@ func run() error {
 	}()
 
 	srv := &http.Server{
-		Addr:              cfg.HTTPAddr,
-		Handler:           httpapi.New(svc, db.Ping, botUsername, log).Handler(),
+		Addr: cfg.HTTPAddr,
+		Handler: httpapi.New(svc, db.Ping, func() string {
+			if name := botUsername.Load(); name != nil {
+				return *name
+			}
+			return ""
+		}, log).Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	errCh := make(chan error, 1)

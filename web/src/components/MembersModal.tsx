@@ -190,7 +190,8 @@ export function MembersModal({ opened, onClose, users }: Props) {
           {invite.isLoading && <Skeleton h={36} />}
           {invite.data && !invite.data.link && (
             <Alert color="yellow">
-              Telegram-бот не настроен: укажите TELEGRAM_BOT_TOKEN в .env и перезапустите сервис.
+              Бот ещё не подключился к Telegram. Если это не пройдёт через минуту, проверьте TELEGRAM_BOT_TOKEN
+              в .env и логи бэкенда: docker compose logs backend.
             </Alert>
           )}
           {invite.data?.link && (

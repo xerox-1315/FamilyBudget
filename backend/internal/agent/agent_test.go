@@ -285,6 +285,44 @@ func TestFallbackWhenLLMFails(t *testing.T) {
 	}
 }
 
+func TestNoDuplicateWhenLLMFailsAfterAdding(t *testing.T) {
+	// Step 1 adds the expense and also looks something up, so the turn continues;
+	// step 2 fails. The fallback parser must not add "кофе 350" a second time.
+	llm := &scriptLLM{steps: []func(openai.ChatCompletionRequest) (openai.ChatCompletionResponse, error){
+		func(openai.ChatCompletionRequest) (openai.ChatCompletionResponse, error) {
+			return openai.ChatCompletionResponse{Choices: []openai.ChatCompletionChoice{{Message: openai.ChatCompletionMessage{
+				Role: openai.ChatMessageRoleAssistant,
+				ToolCalls: []openai.ToolCall{
+					{ID: "1", Type: openai.ToolTypeFunction, Function: openai.FunctionCall{Name: "add_expenses", Arguments: `{"expenses":[{"amount":350,"category":"food","comment":"кофе"}]}`}},
+					{ID: "2", Type: openai.ToolTypeFunction, Function: openai.FunctionCall{Name: "find_expenses", Arguments: `{}`}},
+				},
+			}}}}, nil
+		},
+		func(openai.ChatCompletionRequest) (openai.ChatCompletionResponse, error) {
+			return openai.ChatCompletionResponse{}, errors.New("connection reset")
+		},
+	}}
+	ag, svc := setup(t, llm)
+
+	reply := ag.Handle(context.Background(), alice, "кофе 350")
+	if n := len(expensesOf(t, svc, alice)); n != 1 {
+		t.Fatalf("got %d expenses, want 1 (reply %q)", n, reply)
+	}
+	if !strings.HasPrefix(reply, "Записал: кофе") {
+		t.Errorf("reply = %q, want a report of what was done", reply)
+	}
+}
+
+func TestUpdateRejectsFutureDate(t *testing.T) {
+	ag, svc := setup(t, &scriptLLM{})
+	e := add(t, svc, alice, 35000, "кофе")
+	c := &call{userID: alice, today: domain.DateOnly(now)}
+	res := ag.runTool(context.Background(), c, "update_expense", `{"id":`+itoa(e.ID)+`,"spent_at":"2027-01-01"}`)
+	if !strings.Contains(res, "future") {
+		t.Fatalf("future date accepted: %s", res)
+	}
+}
+
 func TestFallbackOnlyMode(t *testing.T) {
 	ag, svc := setup(t, nil)
 	if reply := ag.Handle(context.Background(), alice, "такси 500 вчера"); !strings.HasPrefix(reply, "Записал") {

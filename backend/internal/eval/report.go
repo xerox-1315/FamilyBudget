@@ -20,7 +20,13 @@ type ModelStats struct {
 	AvgCalls    float64
 	AvgTokens   float64
 	ByCategory  map[string][2]int // category → passed, total runs
-	FailedCases []Result          // first failed run of each failing case
+	FailedCases []FailedCase
+}
+
+// FailedCase is the first failed run of a case and how many of its repeats failed.
+type FailedCase struct {
+	Result
+	FailedRuns int
 }
 
 func (s ModelStats) PassRate() float64 {
@@ -76,34 +82,24 @@ func Summarize(results []Result, models []string) []ModelStats {
 		}
 		st.Cases = len(order)
 		for _, id := range order {
-			runs := perCase[id]
-			allPassed := true
-			for _, r := range runs {
+			var fc FailedCase
+			for _, r := range perCase[id] {
 				if !r.Passed {
-					allPassed = false
-					st.FailedCases = append(st.FailedCases, withFailCount(r, runs))
-					break
+					if fc.FailedRuns == 0 {
+						fc.Result = r
+					}
+					fc.FailedRuns++
 				}
 			}
-			if allPassed {
+			if fc.FailedRuns == 0 {
 				st.Stable++
+			} else {
+				st.FailedCases = append(st.FailedCases, fc)
 			}
 		}
 		out = append(out, st)
 	}
 	return out
-}
-
-// withFailCount stores how many repeats failed in Repeat as a negative marker-free count.
-func withFailCount(r Result, runs []Result) Result {
-	failed := 0
-	for _, x := range runs {
-		if !x.Passed {
-			failed++
-		}
-	}
-	r.Repeat = failed
-	return r
 }
 
 // Markdown renders the full report.
@@ -166,7 +162,7 @@ func Markdown(stats []ModelStats, suite *Suite, repeat int, started time.Time, t
 			continue
 		}
 		for _, r := range s.FailedCases {
-			p("**%s** (%s) — провалов: %d из %d\n\n", r.Case.ID, r.Case.Category, r.Repeat, repeat)
+			p("**%s** (%s) — провалов: %d из %d\n\n", r.Case.ID, r.Case.Category, r.FailedRuns, repeat)
 			for i, t := range r.Case.Turns {
 				p("> 👤 %s\n", t)
 				if i < len(r.Replies) {

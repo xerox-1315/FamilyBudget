@@ -136,6 +136,20 @@ func (a *Agent) PendingDeletion(userID int64) []int64 {
 
 func (a *Agent) runLLM(ctx context.Context, userID int64, text string) (string, error) {
 	c := &call{userID: userID, today: a.today()}
+	reply, err := a.runTurn(ctx, c, text)
+	if err != nil && len(c.changed) > 0 {
+		// The changes are already saved: report them. Returning the error would send the
+		// message to the fallback parser, which would save the same expense again.
+		a.log.Warn("llm failed after changes were made", "user", userID, "err", err)
+		reply = strings.Join(c.changed, "\n")
+		a.remember(userID, text, reply)
+		return reply, nil
+	}
+	return reply, err
+}
+
+func (a *Agent) runTurn(ctx context.Context, c *call, text string) (string, error) {
+	userID := c.userID
 	turnMsgs := []openai.ChatCompletionMessage{{Role: openai.ChatMessageRoleUser, Content: text}}
 	base := append([]openai.ChatCompletionMessage{{Role: openai.ChatMessageRoleSystem, Content: a.systemPrompt()}},
 		a.mem.history(userID)...)

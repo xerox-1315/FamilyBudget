@@ -2,7 +2,6 @@ package eval
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -382,9 +381,4 @@ func toolList(tools []string) string {
 // normalize makes reply checks robust to case and non-breaking spaces in amounts.
 func normalize(s string) string {
 	return strings.ToLower(strings.NewReplacer(" ", " ", " ", " ", "ё", "е").Replace(s))
-}
-
-// IsSetupError reports whether the result failed before reaching the model.
-func IsSetupError(r Result) bool {
-	return r.Err != nil && strings.HasPrefix(r.Err.Error(), "setup:") && !errors.Is(r.Err, ErrDailyLimit)
 }

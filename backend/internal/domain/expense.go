@@ -9,20 +9,14 @@ import (
 	"unicode/utf8"
 )
 
-var (
-	ErrNotFound   = errors.New("not found")
-	ErrValidation = errors.New("validation error")
-)
+var ErrNotFound = errors.New("not found")
 
-// ValidationError describes invalid input; errors.Is(err, ErrValidation) holds for it.
+// ValidationError describes invalid input; transports turn it into a client error.
 type ValidationError struct {
 	Msg string
 }
 
 func (e *ValidationError) Error() string { return e.Msg }
-func (e *ValidationError) Is(target error) bool {
-	return target == ErrValidation
-}
 
 func Invalid(msg string) error { return &ValidationError{Msg: msg} }
 

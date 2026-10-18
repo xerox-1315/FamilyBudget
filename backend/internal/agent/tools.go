@@ -210,6 +210,16 @@ type call struct {
 	// done collects ready user-facing replies from tools whose result needs no further
 	// wording by the model (add, update, show, summarize) in the current step.
 	done []string
+	// changed collects notes of every change made during the whole turn, so a turn that
+	// fails half-way still reports what was saved instead of falling back and repeating it.
+	changed []string
+}
+
+// report records a finished change: it can be the reply of this step and is kept
+// for the whole turn.
+func (c *call) report(note string) {
+	c.done = append(c.done, note)
+	c.changed = append(c.changed, note)
 }
 
 func (a *Agent) runTool(ctx context.Context, c *call, name, args string) string {
@@ -313,14 +323,14 @@ func (a *Agent) toolAdd(ctx context.Context, c *call, args string) (any, error) 
 		out[i] = view(e)
 	}
 	if len(created) == 1 {
-		c.done = append(c.done, "Записал: "+line(created[0], c.today))
+		c.report("Записал: " + line(created[0], c.today))
 	} else {
 		var b strings.Builder
 		b.WriteString("Записал:")
 		for _, e := range created {
 			b.WriteString("\n• " + line(e, c.today))
 		}
-		c.done = append(c.done, b.String())
+		c.report(b.String())
 	}
 	return obj{"added": out}, nil
 }
@@ -510,6 +520,9 @@ func (a *Agent) toolUpdate(ctx context.Context, c *call, args string) (any, erro
 		if err != nil {
 			return nil, err
 		}
+		if d.After(c.today.AddDate(0, 0, 1)) {
+			return nil, domain.Invalid("spent_at is in the future: " + *in.SpentAt)
+		}
 		patch.SpentAt = &d
 	}
 	patch.Comment = in.Comment
@@ -518,7 +531,7 @@ func (a *Agent) toolUpdate(ctx context.Context, c *call, args string) (any, erro
 	if err != nil {
 		return nil, err
 	}
-	c.done = append(c.done, "Исправил: "+line(e, c.today))
+	c.report("Исправил: " + line(e, c.today))
 	return obj{"updated": view(e)}, nil
 }
 
@@ -569,9 +582,9 @@ func (a *Agent) toolSetName(ctx context.Context, c *call, args string) (any, err
 		return nil, err
 	}
 	if u.Name == "" {
-		c.done = append(c.done, "Хорошо, снова подписываю тебя именем из Telegram: «"+u.DisplayName()+"».")
+		c.report("Хорошо, снова подписываю тебя именем из Telegram: «" + u.DisplayName() + "».")
 	} else {
-		c.done = append(c.done, "Запомнил, теперь ты в семейном бюджете — «"+u.Name+"».")
+		c.report("Запомнил, теперь ты в семейном бюджете — «" + u.Name + "».")
 	}
 	return obj{"name": u.DisplayName()}, nil
 }

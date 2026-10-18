@@ -24,7 +24,7 @@ func newServer(t *testing.T) *httptest.Server {
 			t.Fatal(err)
 		}
 	}
-	api := New(svc, func(context.Context) error { return nil }, "family_bot", slog.New(slog.NewTextHandler(io.Discard, nil)))
+	api := New(svc, func(context.Context) error { return nil }, func() string { return "family_bot" }, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	srv := httptest.NewServer(api.Handler())
 	t.Cleanup(srv.Close)
 	return srv

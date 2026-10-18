@@ -18,11 +18,11 @@ import (
 type API struct {
 	svc         *service.Expenses
 	ping        func(context.Context) error
-	botUsername string // empty when the bot is not running
+	botUsername func() string // empty while the bot is not connected
 	log         *slog.Logger
 }
 
-func New(svc *service.Expenses, ping func(context.Context) error, botUsername string, log *slog.Logger) *API {
+func New(svc *service.Expenses, ping func(context.Context) error, botUsername func() string, log *slog.Logger) *API {
 	return &API{svc: svc, ping: ping, botUsername: botUsername, log: log}
 }
 
@@ -198,9 +198,10 @@ func (a *API) rotateInvite(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) inviteDTO(code string) inviteDTO {
-	dto := inviteDTO{Code: code, BotUsername: a.botUsername}
-	if a.botUsername != "" {
-		dto.Link = "https://t.me/" + a.botUsername + "?start=" + code
+	name := a.botUsername()
+	dto := inviteDTO{Code: code, BotUsername: name}
+	if name != "" {
+		dto.Link = "https://t.me/" + name + "?start=" + code
 	}
 	return dto
 }
