@@ -170,7 +170,7 @@ Telegram ◄─ long polling ─► ┌──────────── back
 | `LLM_BASE_URL` | `https://api.groq.com/openai/v1` | OpenAI-совместимый эндпоинт |
 | `LLM_API_KEY` | — | ключ; без него бот работает только через fallback |
 | `LLM_MODEL` | `openai/gpt-oss-120b` | модель |
-| `LLM_FALLBACK_MODELS` | `openai/gpt-oss-20b,qwen/qwen3.8-27b` | запасные модели при исчерпании лимита |
+| `LLM_FALLBACK_MODELS` | `openai/gpt-oss-20b` | запасные модели при исчерпании лимита (выбор — по результатам eval) |
 | `LLM_TIMEOUT` | `60s` | таймаут запроса к LLM |
 | `APP_TIMEZONE` | `Europe/Moscow` | таймзона для «сегодня/вчера» |
 | `POSTGRES_USER/PASSWORD/DB` | `budget` | доступ к БД |

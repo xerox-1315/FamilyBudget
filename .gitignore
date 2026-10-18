@@ -1,4 +1,5 @@
 .env
+backend/eval/report.md
 node_modules/
 web/dist/
 *.exe

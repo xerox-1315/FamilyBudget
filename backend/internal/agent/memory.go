@@ -93,6 +93,17 @@ func (m *memory) takePending(userID int64) *pendingDelete {
 	return p
 }
 
+// peekPending returns the ids of a pending deletion without clearing it.
+func (m *memory) peekPending(userID int64) []int64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s, ok := m.sessions[userID]
+	if !ok || s.pending == nil || m.now().After(s.pending.expires) {
+		return nil
+	}
+	return append([]int64(nil), s.pending.ids...)
+}
+
 // prune drops idle sessions; called periodically to bound memory use.
 func (m *memory) prune() {
 	m.mu.Lock()

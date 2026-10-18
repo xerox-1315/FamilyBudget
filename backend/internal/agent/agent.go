@@ -39,6 +39,8 @@ type Agent struct {
 	tools  []openai.Tool
 	now    func() time.Time
 	sleep  func(ctx context.Context, d time.Duration) error
+
+	onToolCall func(userID int64, name, args, result string)
 }
 
 type Options struct {
@@ -49,6 +51,8 @@ type Options struct {
 	Location *time.Location
 	Logger   *slog.Logger
 	Now      func() time.Time
+	// OnToolCall, if set, observes every tool call (used by evals).
+	OnToolCall func(userID int64, name, args, result string)
 }
 
 func New(svc *service.Expenses, opt Options) *Agent {
@@ -64,6 +68,7 @@ func New(svc *service.Expenses, opt Options) *Agent {
 	return &Agent{
 		svc: svc, llm: opt.LLM, models: opt.Models, loc: opt.Location, log: opt.Logger,
 		mem: newMemory(opt.Now), tools: toolDefinitions(), now: opt.Now, sleep: sleepCtx,
+		onToolCall: opt.OnToolCall,
 	}
 }
 
@@ -85,36 +90,48 @@ func (a *Agent) today() time.Time { return domain.DateOnly(a.now().In(a.loc)) }
 
 // Handle processes one message from a user and returns the reply text.
 // userID always comes from the transport (Telegram), never from the model.
+// If the LLM fails, simple expenses are still recorded by the fallback parser.
 func (a *Agent) Handle(ctx context.Context, userID int64, text string) string {
+	reply, err := a.Reply(ctx, userID, text)
+	if err == nil {
+		return reply
+	}
+	if ctx.Err() != nil {
+		return "Не успел обработать сообщение, попробуй ещё раз."
+	}
+	a.log.Warn("llm failed, using fallback parser", "user", userID, "err", err)
+	return a.fallback(ctx, userID, strings.TrimSpace(text), true)
+}
+
+// Reply is Handle without the fallback: an LLM failure is returned as an error.
+// Evals use it so that a failing model is not masked by the parser.
+func (a *Agent) Reply(ctx context.Context, userID int64, text string) (string, error) {
 	text = strings.TrimSpace(text)
 	if text == "" {
-		return "Напиши трату текстом, например: «кофе 350»."
+		return "Напиши трату текстом, например: «кофе 350».", nil
 	}
 
 	if p := a.mem.takePending(userID); p != nil {
 		switch {
 		case isYes(text):
-			return a.confirmDelete(ctx, userID, text, p)
+			return a.confirmDelete(ctx, userID, text, p), nil
 		case isNo(text):
 			reply := "Хорошо, ничего не удаляю."
 			a.remember(userID, text, reply)
-			return reply
+			return reply, nil
 		}
 		// Anything else cancels the pending deletion and is handled as a new request.
 	}
 
 	if a.llm == nil {
-		return a.fallback(ctx, userID, text, false)
+		return a.fallback(ctx, userID, text, false), nil
 	}
-	reply, err := a.runLLM(ctx, userID, text)
-	if err != nil {
-		if ctx.Err() != nil {
-			return "Не успел обработать сообщение, попробуй ещё раз."
-		}
-		a.log.Warn("llm failed, using fallback parser", "user", userID, "err", err)
-		return a.fallback(ctx, userID, text, true)
-	}
-	return reply
+	return a.runLLM(ctx, userID, text)
+}
+
+// PendingDeletion returns the ids of expenses awaiting the user's confirmation, if any.
+func (a *Agent) PendingDeletion(userID int64) []int64 {
+	return a.mem.peekPending(userID)
 }
 
 func (a *Agent) runLLM(ctx context.Context, userID int64, text string) (string, error) {
@@ -151,6 +168,9 @@ func (a *Agent) runLLM(ctx context.Context, userID int64, text string) (string, 
 		for _, tc := range msg.ToolCalls {
 			result := a.runTool(ctx, c, tc.Function.Name, tc.Function.Arguments)
 			a.log.Debug("tool call", "user", userID, "tool", tc.Function.Name, "args", tc.Function.Arguments, "result", result)
+			if a.onToolCall != nil {
+				a.onToolCall(userID, tc.Function.Name, tc.Function.Arguments, result)
+			}
 			turnMsgs = append(turnMsgs, openai.ChatCompletionMessage{
 				Role: openai.ChatMessageRoleTool, ToolCallID: tc.ID, Name: tc.Function.Name, Content: result,
 			})
